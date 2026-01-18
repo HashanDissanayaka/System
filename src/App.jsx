@@ -1029,7 +1029,7 @@ function App() {
 
                                                 <hr style={{ margin: '30px 0', border: '0', borderTop: '1px solid var(--glass-border)' }} />
                                                 <h4>Study Content (Notes)</h4>
-                                                <ReactQuill
+                                                {/* <ReactQuill
                                                     theme="snow"
                                                     value={editingModule.content_json?.notes || ''}
                                                     onChange={content => setEditingModule({ ...editingModule, content_json: { ...editingModule.content_json, notes: content } })}
@@ -1042,6 +1042,12 @@ function App() {
                                                             ['link', 'clean']
                                                         ],
                                                     }}
+                                                /> */}
+                                                <textarea
+                                                    style={{ width: '100%', minHeight: '200px', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--glass-border)', borderRadius: '8px', color: '#fff', padding: '12px', fontFamily: 'monospace' }}
+                                                    value={editingModule.content_json?.notes || ''}
+                                                    onChange={e => setEditingModule({ ...editingModule, content_json: { ...editingModule.content_json, notes: e.target.value } })}
+                                                    placeholder="HTML Content here..."
                                                 />
 
                                                 <hr style={{ margin: '30px 0', border: '0', borderTop: '1px solid var(--glass-border)' }} />
