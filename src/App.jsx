@@ -834,7 +834,7 @@ function App() {
                                                                 newP[pIdx].title = e.target.value;
                                                                 setModulePapers(newP);
                                                             }} />
-                                                            <input type="text" placeholder="URL" value={paper.url || pIdx.file_url || ''} onChange={e => {
+                                                            <input type="text" placeholder="URL" value={paper.url || paper.file_url || ''} onChange={e => {
                                                                 const newP = [...modulePapers];
                                                                 newP[pIdx].url = e.target.value;
                                                                 setModulePapers(newP);
