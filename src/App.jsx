@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { modulesData } from './data/modulesData';
 import { supabase, isSupabaseConfigured } from './supabaseClient';
+import ReactQuill from 'react-quill';
+import 'react-quill/dist/quill.snow.css';
 
 function App() {
     const [view, setView] = useState('login'); // 'login', 'register', 'dashboard', 'module-detail'
@@ -852,6 +854,16 @@ function App() {
                     .stat-card { padding: 24px; text-align: center; }
                     .stat-card h4 { font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; margin-bottom: 8px; letter-spacing: 0.05em; }
                     .stat-card h2 { font-size: 2rem; color: var(--accent-color); font-weight: 700; }
+
+                    /* Quill Editor Dark Theme */
+                    .quill { background: rgba(255,255,255,0.03); border-radius: 8px; border: 1px solid var(--glass-border); margin-top: 10px; }
+                    .ql-toolbar { border-color: var(--glass-border) !important; background: rgba(255,255,255,0.05); border-top-left-radius: 8px; border-top-right-radius: 8px; }
+                    .ql-container { border-color: var(--glass-border) !important; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px; min-height: 200px; color: #fff; }
+                    .ql-editor { font-size: 1rem; line-height: 1.6; }
+                    .ql-snow .ql-stroke { stroke: #fff !important; }
+                    .ql-snow .ql-fill { fill: #fff !important; }
+                    .ql-snow .ql-picker { color: #fff !important; }
+                    .ql-snow .ql-picker-options { background-color: var(--secondary-bg) !important; color: #fff !important; }
                 `}</style>
 
                 <header>
@@ -1010,13 +1022,20 @@ function App() {
                                                 </div>
 
                                                 <hr style={{ margin: '30px 0', border: '0', borderTop: '1px solid var(--glass-border)' }} />
-                                                <h4>Study Content (Notes HTML)</h4>
-                                                <textarea
-                                                    style={{ width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--glass-border)', borderRadius: '8px', color: '#fff', padding: '12px', marginTop: '10px' }}
-                                                    rows="5"
+                                                <h4>Study Content (Notes)</h4>
+                                                <ReactQuill
+                                                    theme="snow"
                                                     value={editingModule.content_json?.notes || ''}
-                                                    onChange={e => setEditingModule({ ...editingModule, content_json: { ...editingModule.content_json, notes: e.target.value } })}
-                                                    placeholder="<h3>Notes</h3><p>Text here...</p>"
+                                                    onChange={content => setEditingModule({ ...editingModule, content_json: { ...editingModule.content_json, notes: content } })}
+                                                    modules={{
+                                                        toolbar: [
+                                                            [{ 'header': [1, 2, 3, false] }],
+                                                            ['bold', 'italic', 'underline', 'strike'],
+                                                            [{ 'list': 'ordered' }, { 'list': 'bullet' }],
+                                                            [{ 'align': [] }],
+                                                            ['link', 'clean']
+                                                        ],
+                                                    }}
                                                 />
 
                                                 <hr style={{ margin: '30px 0', border: '0', borderTop: '1px solid var(--glass-border)' }} />
