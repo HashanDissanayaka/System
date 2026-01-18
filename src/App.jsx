@@ -142,9 +142,9 @@ function App() {
                 .insert([
                     {
                         fullname: regName,
-                        school: regSchool,
+                        school: regCode.trim().startsWith('ADM-') ? (regSchool || 'Admin') : regSchool,
                         student_code: regCode.trim(),
-                        grade: parseInt(regGrade),
+                        grade: regCode.trim().startsWith('ADM-') ? (parseInt(regGrade) || 0) : parseInt(regGrade),
                         password: regPassword,
                         status: regCode.trim().startsWith('ADM-') ? 'approved' : 'pending',
                         role: regCode.trim().startsWith('ADM-') ? 'admin' : 'student'
@@ -418,19 +418,23 @@ function App() {
                             <input type="text" placeholder="Ex: Hashan Dissanayaka" value={regName} onChange={(e) => setRegName(e.target.value)} required />
                         </div>
                         <div className="input-group">
-                            <label>School</label>
-                            <input type="text" placeholder="Enter your school name" value={regSchool} onChange={(e) => setRegSchool(e.target.value)} required />
-                        </div>
-                        <div className="input-group">
                             <label>Student Code (Unique)</label>
                             <input type="text" placeholder="Create a unique code" value={regCode} onChange={(e) => setRegCode(e.target.value)} required />
                         </div>
-                        <div className="input-group">
-                            <label>Grade</label>
-                            <select value={regGrade} onChange={(e) => setRegGrade(e.target.value)}>
-                                {[6, 7, 8, 9, 10, 11].map(g => <option key={g} value={g}>Grade {g}</option>)}
-                            </select>
-                        </div>
+                        {!regCode.trim().startsWith('ADM-') && (
+                            <>
+                                <div className="input-group">
+                                    <label>School</label>
+                                    <input type="text" placeholder="Enter your school name" value={regSchool} onChange={(e) => setRegSchool(e.target.value)} required={!regCode.trim().startsWith('ADM-')} />
+                                </div>
+                                <div className="input-group">
+                                    <label>Grade</label>
+                                    <select value={regGrade} onChange={(e) => setRegGrade(e.target.value)}>
+                                        {[6, 7, 8, 9, 10, 11].map(g => <option key={g} value={g}>Grade {g}</option>)}
+                                    </select>
+                                </div>
+                            </>
+                        )}
                         <div className="input-group">
                             <label>Password</label>
                             <input type="password" placeholder="Create a password" value={regPassword} onChange={(e) => setRegPassword(e.target.value)} required />
