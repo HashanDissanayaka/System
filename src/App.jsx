@@ -957,7 +957,13 @@ function App() {
                     <div className="glass-card" style={{ padding: '24px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
                             <h3>Module Management</h3>
-                            <button className="auth-btn" style={{ width: 'fit-content', padding: '8px 20px' }} onClick={() => { setEditingModule({ title: '', grade: 6, description: '', category: 'Foundation', content_json: {} }); setIsModuleModalOpen(true); }}>+ Add New Module</button>
+                            <button className="auth-btn" style={{ width: 'fit-content', padding: '8px 20px' }} onClick={() => {
+                                setEditingModule({ title: '', grade: 6, description: '', category: 'Foundation', content_json: { notes: '' } });
+                                setModuleQuiz({ questions: [], time_limit: 300, max_attempts: 3 });
+                                setModulePapers([]);
+                                setEditorMode('edit');
+                                setIsModuleModalOpen(true);
+                            }}>+ Add New Module</button>
                         </div>
                         <table className="admin-table">
                             <thead>
@@ -983,7 +989,7 @@ function App() {
                             </tbody>
                         </table>
 
-                        {isModuleModalOpen && (
+                        {isModuleModalOpen && editingModule && (
                             <div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, padding: '20px' }}>
                                 <div className="glass-card" style={{ width: '100%', maxWidth: '600px', padding: '30px', maxHeight: '90vh', overflowY: 'auto' }}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
