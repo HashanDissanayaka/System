@@ -144,7 +144,7 @@ function App() {
                         fullname: regName,
                         school: regCode.trim().startsWith('ADM-') ? (regSchool || 'Admin') : regSchool,
                         student_code: regCode.trim(),
-                        grade: regCode.trim().startsWith('ADM-') ? (parseInt(regGrade) || 0) : parseInt(regGrade),
+                        grade: regCode.trim().startsWith('ADM-') ? 0 : parseInt(regGrade),
                         password: regPassword,
                         status: regCode.trim().startsWith('ADM-') ? 'approved' : 'pending',
                         role: regCode.trim().startsWith('ADM-') ? 'admin' : 'student'
