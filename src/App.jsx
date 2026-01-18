@@ -309,7 +309,7 @@ function App() {
                     module_id: currentModule.id,
                     count: newCount,
                     score: finalScore,
-                    total_questions: currentModule.quiz.questions.length
+                    total_questions: (activeQuiz?.questions || []).length
                 }, { onConflict: 'student_id,module_id' });
 
             if (!error) {
