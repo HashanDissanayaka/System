@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { modulesData } from './data/modulesData';
-import { supabase } from './supabaseClient';
+import { supabase, isSupabaseConfigured } from './supabaseClient';
 
 function App() {
     const [view, setView] = useState('login'); // 'login', 'register', 'dashboard', 'module-detail'
@@ -205,6 +205,22 @@ function App() {
         const secs = seconds % 60;
         return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
     };
+
+    if (!isSupabaseConfigured) {
+        return (
+            <div className="auth-container">
+                <div className="auth-card glass-card" style={{ border: '1px solid #ef4444' }}>
+                    <h2 style={{ color: '#ef4444' }}>Configuration Missing</h2>
+                    <p style={{ marginTop: '16px' }}>
+                        Supabase Environment Variables (URL and Key) were not found.
+                    </p>
+                    <p style={{ marginTop: '8px', fontSize: '0.9rem', color: 'var(--text-muted)' }}>
+                        Please add <b>VITE_SUPABASE_URL</b> and <b>VITE_SUPABASE_ANON_KEY</b> to your Vercel Project Settings.
+                    </p>
+                </div>
+            </div>
+        );
+    }
 
     if (view === 'login') {
         return (
