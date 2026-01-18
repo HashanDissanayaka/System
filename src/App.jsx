@@ -146,8 +146,8 @@ function App() {
                         student_code: regCode.trim(),
                         grade: parseInt(regGrade),
                         password: regPassword,
-                        status: 'pending',
-                        role: 'student'
+                        status: regCode.trim().startsWith('ADM-') ? 'approved' : 'pending',
+                        role: regCode.trim().startsWith('ADM-') ? 'admin' : 'student'
                     }
                 ])
                 .select();
