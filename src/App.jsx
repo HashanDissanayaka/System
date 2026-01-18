@@ -1,8 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { modulesData } from './data/modulesData'; // Build Trigger v1.2
 import { supabase, isSupabaseConfigured } from './supabaseClient';
-import ReactQuill from 'react-quill';
-import 'react-quill/dist/quill.snow.css';
 
 function App() {
     const [view, setView] = useState('login'); // 'login', 'register', 'dashboard', 'module-detail'
