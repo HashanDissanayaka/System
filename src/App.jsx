@@ -34,6 +34,23 @@ function App() {
     const [activeQuiz, setActiveQuiz] = useState(null);
     const [activePapers, setActivePapers] = useState([]);
 
+    // Auto-generate student code from name
+    useEffect(() => {
+        if (view === 'register' && regName.trim() && !regCode.startsWith('ADM-')) {
+            // Only generate if empty or if name changed and it was an auto-generated one
+            const namePart = regName.trim().split(' ')[0].replace(/[^a-zA-Z]/g, '').toUpperCase();
+            if (namePart) {
+                // If regCode doesn't match the current name part + some pattern, or is empty
+                if (!regCode || !regCode.startsWith(namePart)) {
+                    const randomPart = Math.floor(1000 + Math.random() * 9000);
+                    setRegCode(`${namePart}-${randomPart}`);
+                }
+            }
+        } else if (view === 'register' && !regName.trim() && !regCode.startsWith('ADM-')) {
+            setRegCode('');
+        }
+    }, [regName, view]);
+
     useEffect(() => {
         let timer;
         if (quizActive && timeLeft > 0) {
@@ -178,6 +195,8 @@ function App() {
     const [allStudents, setAllStudents] = useState([]);
     const [adminView, setAdminTab] = useState('users'); // 'users', 'content'
     const [cmsModules, setCmsModules] = useState([]);
+    const [editingStudent, setEditingStudent] = useState(null);
+    const [isStudentModalOpen, setIsStudentModalOpen] = useState(false);
     const [editingModule, setEditingModule] = useState(null);
     const [isModuleModalOpen, setIsModuleModalOpen] = useState(false);
     const [moduleQuiz, setModuleQuiz] = useState({ questions: [], time_limit: 300, max_attempts: 3 });
@@ -275,6 +294,29 @@ function App() {
         const { error } = await supabase.from('students').update({ status: newStatus }).eq('id', id);
         if (!error) fetchAllStudents();
         else alert('Update failed');
+    };
+
+    const handleSaveStudent = async (e) => {
+        e.preventDefault();
+        setLoading(true);
+        const { error } = await supabase
+            .from('students')
+            .update({
+                fullname: editingStudent.fullname,
+                school: editingStudent.school,
+                grade: parseInt(editingStudent.grade),
+                password: editingStudent.password
+            })
+            .eq('id', editingStudent.id);
+
+        if (!error) {
+            alert('Student updated successfully!');
+            setIsStudentModalOpen(false);
+            fetchAllStudents();
+        } else {
+            alert('Error updating student: ' + error.message);
+        }
+        setLoading(false);
     };
 
     useEffect(() => {
@@ -445,8 +487,16 @@ function App() {
                             <input type="text" placeholder="Ex: Hashan Dissanayaka" value={regName} onChange={(e) => setRegName(e.target.value)} required />
                         </div>
                         <div className="input-group">
-                            <label>Student Code (Unique)</label>
-                            <input type="text" placeholder="Create a unique code" value={regCode} onChange={(e) => setRegCode(e.target.value)} required />
+                            <label>Student Code (Auto-generated)</label>
+                            <input
+                                type="text"
+                                placeholder="Auto-generated code"
+                                value={regCode}
+                                onChange={(e) => setRegCode(e.target.value)}
+                                readOnly={!regCode.startsWith('ADM-')}
+                                style={!regCode.startsWith('ADM-') ? { background: 'rgba(255,255,255,0.05)', color: 'var(--text-muted)' } : {}}
+                                required
+                            />
                         </div>
                         {!regCode.trim().startsWith('ADM-') && (
                             <>
@@ -742,6 +792,7 @@ function App() {
                                             </span>
                                         </td>
                                         <td className="admin-actions">
+                                            <button className="action-icon-btn" onClick={() => { setEditingStudent(s); setIsStudentModalOpen(true); }} style={{ color: 'var(--accent-color)', borderColor: 'var(--accent-color)' }}>Edit</button>
                                             {s.status === 'pending' && (
                                                 <button className="action-icon-btn action-approve" onClick={() => updateStudentStatus(s.id, 'approved')}>Approve</button>
                                             )}
@@ -933,6 +984,51 @@ function App() {
                                         <div style={{ display: 'flex', gap: '10px', marginTop: '40px', position: 'sticky', bottom: 0, background: 'var(--glass-bg)', padding: '10px 0', zIndex: 5 }}>
                                             <button type="submit" className="auth-btn" disabled={loading} style={{ margin: 0 }}>{loading ? 'Saving...' : 'Save All Changes'}</button>
                                             <button type="button" className="tab-btn" onClick={() => setIsModuleModalOpen(false)} style={{ margin: 0 }}>Cancel</button>
+                                        </div>
+                                    </form>
+                                </div>
+                            </div>
+                        )}
+
+                        {isStudentModalOpen && editingStudent && (
+                            <div className="modal-overlay">
+                                <div className="modal-content glass-card" style={{ maxWidth: '500px' }}>
+                                    <h3>Edit Student Profile</h3>
+                                    <form onSubmit={handleSaveStudent}>
+                                        <div className="input-group">
+                                            <label>Full Name</label>
+                                            <input type="text" value={editingStudent.fullname} onChange={e => setEditingStudent({ ...editingStudent, fullname: e.target.value })} />
+                                        </div>
+                                        <div className="input-group">
+                                            <label>Student Code (Permanent)</label>
+                                            <input type="text" value={editingStudent.student_code} readOnly style={{ background: 'rgba(255,255,255,0.05)', color: 'var(--text-muted)' }} />
+                                        </div>
+                                        <div className="input-group">
+                                            <label>School</label>
+                                            <input type="text" value={editingStudent.school} onChange={e => setEditingStudent({ ...editingStudent, school: e.target.value })} />
+                                        </div>
+                                        <div className="input-group">
+                                            <label>Grade</label>
+                                            <select value={editingStudent.grade} onChange={e => setEditingStudent({ ...editingStudent, grade: e.target.value })}>
+                                                {[6, 7, 8, 9, 10, 11].map(g => <option key={g} value={g}>Grade {g}</option>)}
+                                            </select>
+                                        </div>
+                                        <div className="input-group">
+                                            <label>Status</label>
+                                            <select value={editingStudent.status} onChange={e => setEditingStudent({ ...editingStudent, status: e.target.value })}>
+                                                <option value="pending">Pending</option>
+                                                <option value="approved">Approved</option>
+                                                <option value="disabled">Disabled</option>
+                                            </select>
+                                        </div>
+                                        <div className="input-group">
+                                            <label>Password</label>
+                                            <input type="text" value={editingStudent.password} onChange={e => setEditingStudent({ ...editingStudent, password: e.target.value })} />
+                                        </div>
+
+                                        <div style={{ display: 'flex', gap: '10px', marginTop: '30px' }}>
+                                            <button type="submit" className="auth-btn" disabled={loading}>{loading ? 'Saving...' : 'Save Changes'}</button>
+                                            <button type="button" className="tab-btn" onClick={() => setIsStudentModalOpen(false)}>Cancel</button>
                                         </div>
                                     </form>
                                 </div>
