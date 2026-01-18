@@ -33,6 +33,7 @@ function App() {
     const [modules, setModules] = useState([]);
     const [activeQuiz, setActiveQuiz] = useState(null);
     const [activePapers, setActivePapers] = useState([]);
+    const [leaderboard, setLeaderboard] = useState([]);
 
     // Auto-generate sequential student code from name (e.g. NAME-0001)
     useEffect(() => {
@@ -132,6 +133,34 @@ function App() {
         return () => clearTimeout(timer);
     }, [loginCode]);
 
+    const fetchLeaderboard = async () => {
+        const { data: students } = await supabase.from('students').select('id, fullname').eq('role', 'student');
+        const { data: attempts } = await supabase.from('quiz_attempts').select('student_id, score, total_questions');
+
+        const studentStats = students?.map(s => {
+            const sAttempts = attempts?.filter(a => a.student_id === s.id && a.total_questions > 0) || [];
+            const totalPct = sAttempts.reduce((sum, a) => sum + (a.score / a.total_questions) * 100, 0);
+            return {
+                fullname: s.fullname,
+                average: sAttempts.length > 0 ? Math.round(totalPct / sAttempts.length) : 0,
+                completed: sAttempts.length
+            };
+        });
+
+        const topPlayers = (studentStats || [])
+            .filter(s => s.completed > 0)
+            .sort((a, b) => b.average - a.average || b.completed - a.completed)
+            .slice(0, 5);
+
+        setLeaderboard(topPlayers);
+    };
+
+    useEffect(() => {
+        if (view === 'dashboard') {
+            fetchLeaderboard();
+        }
+    }, [view]);
+
     const handleLogin = async (e) => {
         e.preventDefault();
         setLoading(true);
@@ -199,7 +228,7 @@ function App() {
             if (error) {
                 alert('Registration failed: ' + error.message);
             } else {
-                alert('Registration successful! You can now log in.');
+                // alert('Registration successful! You can now log in.');
                 setView('login');
                 setLoginCode(regCode);
             }
@@ -220,10 +249,11 @@ function App() {
 
     // Admin Functions
     const [allStudents, setAllStudents] = useState([]);
-    const [adminView, setAdminTab] = useState('users'); // 'users', 'content'
+    const [adminView, setAdminTab] = useState('analytics'); // 'analytics', 'users', 'content'
     const [cmsModules, setCmsModules] = useState([]);
     const [editingStudent, setEditingStudent] = useState(null);
     const [isStudentModalOpen, setIsStudentModalOpen] = useState(false);
+    const [adminStats, setAdminStats] = useState({ totalStudents: 0, pendingStudents: 0, approvedStudents: 0, avgScore: 0, moduleAttempts: {} });
     const [editingModule, setEditingModule] = useState(null);
     const [isModuleModalOpen, setIsModuleModalOpen] = useState(false);
     const [moduleQuiz, setModuleQuiz] = useState({ questions: [], time_limit: 300, max_attempts: 3 });
@@ -286,14 +316,27 @@ function App() {
                 if (error) throw error;
             }
 
-            // Save Papers
+            // Save Papers (Upload files first if any)
             if (currentModuleId) {
+                const processedPapers = await Promise.all(modulePapers.map(async paper => {
+                    if (paper.file) {
+                        const fileExt = paper.file.name.split('.').pop();
+                        const fileName = `${Math.random()}-${Date.now()}.${fileExt}`;
+                        const filePath = `${fileName}`;
+                        const { error: uploadError } = await supabase.storage.from('papers').upload(filePath, paper.file);
+                        if (uploadError) throw uploadError;
+                        const { data: { publicUrl } } = supabase.storage.from('papers').getPublicUrl(filePath);
+                        return { title: paper.title, url: publicUrl };
+                    }
+                    return { title: paper.title, url: paper.url || paper.file_url };
+                }));
+
                 await supabase.from('papers').delete().eq('module_id', currentModuleId);
-                if (modulePapers.length > 0) {
-                    const papersToSave = modulePapers.map(p => ({
+                if (processedPapers.length > 0) {
+                    const papersToSave = processedPapers.map(p => ({
                         module_id: currentModuleId,
                         title: p.title,
-                        url: p.url || p.file_url
+                        url: p.url
                     }));
                     const { error } = await supabase.from('papers').insert(papersToSave);
                     if (error) throw error;
@@ -346,10 +389,40 @@ function App() {
         setLoading(false);
     };
 
+    const fetchAnalytics = async () => {
+        const { data: students } = await supabase.from('students').select('status, role');
+        const { data: attempts } = await supabase.from('quiz_attempts').select('score, total_questions, module_id');
+
+        const total = students?.filter(s => s.role !== 'admin').length || 0;
+        const pending = students?.filter(s => s.status === 'pending' && s.role !== 'admin').length || 0;
+        const approved = total - pending;
+
+        let totalScorePct = 0;
+        let scoreCount = 0;
+        const modAttempts = {};
+
+        attempts?.forEach(a => {
+            if (a.total_questions > 0) {
+                totalScorePct += (a.score / a.total_questions) * 100;
+                scoreCount++;
+            }
+            modAttempts[a.module_id] = (modAttempts[a.module_id] || 0) + 1;
+        });
+
+        setAdminStats({
+            totalStudents: total,
+            pendingStudents: pending,
+            approvedStudents: approved,
+            avgScore: scoreCount > 0 ? Math.round(totalScorePct / scoreCount) : 0,
+            moduleAttempts: modAttempts
+        });
+    };
+
     useEffect(() => {
         if (view === 'admin-dashboard') {
             fetchAllStudents();
             fetchCmsContent();
+            fetchAnalytics();
         }
     }, [view]);
 
@@ -774,6 +847,11 @@ function App() {
                     .action-icon-btn { padding: 6px 12px; border-radius: 4px; border: 1px solid var(--glass-border); background: rgba(255,255,255,0.05); color: #fff; cursor: pointer; font-size: 0.8rem; }
                     .action-approve { border-color: #22c55e; color: #22c55e; }
                     .action-disable { border-color: #ef4444; color: #ef4444; }
+                    
+                    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 40px; }
+                    .stat-card { padding: 24px; text-align: center; }
+                    .stat-card h4 { font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; margin-bottom: 8px; letter-spacing: 0.05em; }
+                    .stat-card h2 { font-size: 2rem; color: var(--accent-color); font-weight: 700; }
                 `}</style>
 
                 <header>
@@ -788,9 +866,34 @@ function App() {
                 </header>
 
                 <div className="admin-nav">
+                    <button className={`tab-btn ${adminView === 'analytics' ? 'active' : ''}`} onClick={() => setAdminTab('analytics')}>Analytics</button>
                     <button className={`tab-btn ${adminView === 'users' ? 'active' : ''}`} onClick={() => setAdminTab('users')}>Users</button>
                     <button className={`tab-btn ${adminView === 'content' ? 'active' : ''}`} onClick={() => setAdminTab('content')}>Content</button>
                 </div>
+
+                {adminView === 'analytics' && (
+                    <div className="analytics-view">
+                        <div className="stats-grid">
+                            <div className="stat-card glass-card">
+                                <h4>Total Students</h4>
+                                <h2>{adminStats.totalStudents}</h2>
+                            </div>
+                            <div className="stat-card glass-card">
+                                <h4>Pending</h4>
+                                <h2 style={{ color: '#f59e0b' }}>{adminStats.pendingStudents}</h2>
+                            </div>
+                            <div className="stat-card glass-card">
+                                <h4>Avg Quiz Score</h4>
+                                <h2 style={{ color: '#22c55e' }}>{adminStats.avgScore}%</h2>
+                            </div>
+                        </div>
+
+                        <div className="glass-card" style={{ padding: '24px' }}>
+                            <h3>Top Performers (Beta)</h3>
+                            <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>Real-time leaderboard coming soon.</p>
+                        </div>
+                    </div>
+                )}
 
                 {adminView === 'users' && (
                     <div className="glass-card" style={{ padding: '24px' }}>
@@ -926,12 +1029,24 @@ function App() {
                                                                 newP[pIdx].title = e.target.value;
                                                                 setModulePapers(newP);
                                                             }} />
-                                                            <input type="text" placeholder="URL" value={paper.url || paper.file_url || ''} onChange={e => {
-                                                                const newP = [...modulePapers];
-                                                                newP[pIdx].url = e.target.value;
-                                                                setModulePapers(newP);
-                                                            }} />
-                                                            <button type="button" style={{ color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer' }} onClick={() => setModulePapers(modulePapers.filter((_, i) => i !== pIdx))}>×</button>
+                                                            <div style={{ position: 'relative', flex: 1 }}>
+                                                                <input type="text" placeholder="URL or selected file" value={paper.file ? `File: ${paper.file.name}` : (paper.url || paper.file_url || '')} readOnly={!!paper.file} onChange={e => {
+                                                                    const newP = [...modulePapers];
+                                                                    newP[pIdx].url = e.target.value;
+                                                                    setModulePapers(newP);
+                                                                }} />
+                                                                <input type="file" style={{ display: 'none' }} id={`file-${pIdx}`} onChange={e => {
+                                                                    const file = e.target.files[0];
+                                                                    if (file) {
+                                                                        const newP = [...modulePapers];
+                                                                        newP[pIdx].file = file;
+                                                                        if (!newP[pIdx].title) newP[pIdx].title = file.name.split('.')[0];
+                                                                        setModulePapers(newP);
+                                                                    }
+                                                                }} />
+                                                                <label htmlFor={`file-${pIdx}`} style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', cursor: 'pointer', fontSize: '1.2rem' }}>📁</label>
+                                                            </div>
+                                                            <button type="button" style={{ color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer', fontSize: '1.2rem' }} onClick={() => setModulePapers(modulePapers.filter((_, i) => i !== pIdx))}>×</button>
                                                         </div>
                                                     ))}
                                                     <button type="button" className="tab-btn" style={{ fontSize: '0.8rem' }} onClick={() => setModulePapers([...modulePapers, { title: '', url: '' }])}>+ Add Paper</button>
@@ -1107,6 +1222,23 @@ function App() {
           width: fit-content;
         }
         .module-card:hover .action-btn { background: var(--accent-color); border-color: var(--accent-color); }
+
+        .dashboard-layout { display: grid; grid-template-columns: 1fr 320px; gap: 40px; }
+        .sidebar { display: flex; flex-direction: column; gap: 30px; }
+        .progress-card { padding: 24px; text-align: center; }
+        .progress-circle { width: 100px; height: 100px; border-radius: 50%; border: 6px solid var(--glass-border); border-top-color: var(--accent-color); display: flex; align-items: center; justify-content: center; margin: 16px auto; font-weight: 800; font-size: 1.2rem; }
+        
+        .leaderboard-card { padding: 24px; }
+        .leader-list { margin-top: 16px; }
+        .leader-item { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--glass-border); }
+        .leader-rank { width: 24px; font-weight: 800; color: var(--accent-color); }
+        .leader-name { flex: 1; font-size: 0.9rem; font-weight: 500; }
+        .leader-score { font-weight: 700; color: #22c55e; font-size: 0.9rem; }
+
+        @media (max-width: 900px) {
+            .dashboard-layout { grid-template-columns: 1fr; }
+            .sidebar { order: -1; }
+        }
       `}</style>
 
             <header>
@@ -1122,20 +1254,48 @@ function App() {
                 </div>
             </header>
 
-            <section>
-                <h3 className="section-title">Your Modules</h3>
-                <div className="module-grid">
-                    {studentModules.map(module => (
-                        <div key={module.id} className="module-card glass-card" onClick={() => openModule(module)}>
-                            <span className="category-tag">{module.category}</span>
-                            <h3>{module.title}</h3>
-                            <p>{module.description}</p>
-                            <button className="action-btn">Open Module</button>
+            <div className="dashboard-layout">
+                <section className="main-content">
+                    <h3 className="section-title">Your Modules</h3>
+                    <div className="module-grid">
+                        {studentModules.map(module => (
+                            <div key={module.id} className="module-card glass-card" onClick={() => openModule(module)}>
+                                <span className="category-tag">{module.category}</span>
+                                <h3>{module.title}</h3>
+                                <p>{module.description}</p>
+                                <button className="action-btn">Open Module</button>
+                            </div>
+                        ))}
+                        {studentModules.length === 0 && <p>No modules available for your grade yet.</p>}
+                    </div>
+                </section>
+
+                <aside className="sidebar">
+                    <div className="progress-card glass-card">
+                        <h3>Your Progress</h3>
+                        <div className="progress-circle">
+                            {Math.round((Object.keys(attempts).length / (modules.length || 1)) * 100)}%
                         </div>
-                    ))}
-                    {studentModules.length === 0 && <p>No modules available for your grade yet.</p>}
-                </div>
-            </section>
+                        <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                            {Object.keys(attempts).length} of {modules.length} Modules Completed
+                        </p>
+                    </div>
+
+                    <div className="leaderboard-card glass-card">
+                        <h3>Top Heroes 🏆</h3>
+                        <div className="leader-list">
+                            {leaderboard.map((player, idx) => (
+                                <div key={idx} className="leader-item">
+                                    <span className="leader-rank">#{idx + 1}</span>
+                                    <span className="leader-name">{player.fullname}</span>
+                                    <span className="leader-score">{player.average}%</span>
+                                </div>
+                            ))}
+                            {leaderboard.length === 0 && <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>No data yet.</p>}
+                        </div>
+                    </div>
+                </aside>
+            </div>
 
             <footer style={{ position: 'fixed', bottom: 30, right: 30, fontSize: '0.8rem', color: 'var(--text-muted)' }}>
                 ICT With Hashan Dissanayaka v1.1
