@@ -67,7 +67,7 @@ function App() {
                 try {
                     const { data, error } = await supabase
                         .from('students')
-                        .select('fullname, grade')
+                        .select('fullname, grade, role')
                         .eq('student_code', loginCode.trim())
                         .maybeSingle();
 
