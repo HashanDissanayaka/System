@@ -182,6 +182,7 @@ function App() {
     const [isModuleModalOpen, setIsModuleModalOpen] = useState(false);
     const [moduleQuiz, setModuleQuiz] = useState({ questions: [], time_limit: 300, max_attempts: 3 });
     const [modulePapers, setModulePapers] = useState([]);
+    const [editorMode, setEditorMode] = useState('edit'); // 'edit', 'preview'
 
     const fetchAllStudents = async () => {
         const { data } = await supabase.from('students').select('*').order('created_at', { ascending: false });
@@ -201,6 +202,7 @@ function App() {
         // Fetch papers
         const { data: pData } = await supabase.from('papers').select('*').eq('module_id', m.id);
         setModulePapers(pData || []);
+        setEditorMode('edit');
         setIsModuleModalOpen(true);
     };
 
@@ -231,8 +233,19 @@ function App() {
             await supabase.from('quizzes').insert([quizData]);
         }
 
-        // Save Papers (Simplified: replace all for now or just add/delete)
-        // For simplicity in this demo, we'll just handle adding one and show list
+        // Save Papers
+        // Simple approach: delete existing and insert new list
+        if (editingModule.id) {
+            await supabase.from('papers').delete().eq('module_id', editingModule.id);
+        }
+        if (modulePapers.length > 0) {
+            const papersToSave = modulePapers.map(p => ({
+                module_id: currentModuleId,
+                title: p.title,
+                url: p.url || p.file_url
+            }));
+            await supabase.from('papers').insert(papersToSave);
+        }
 
         setIsModuleModalOpen(false);
         fetchCmsContent();
@@ -633,11 +646,12 @@ function App() {
                             {activePapers.length === 0 ? (
                                 <p>No papers attached to this module yet.</p>
                             ) : (
-                                <div className="paper-list">
+                                <div className="paper-list" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '15px' }}>
                                     {activePapers.map(paper => (
-                                        <div key={paper.id} className="paper-item glass-card">
-                                            <span>{paper.title}</span>
-                                            <a href={paper.url || paper.file_url} target="_blank" rel="noopener noreferrer">View / Download</a>
+                                        <div key={paper.id} className="paper-item glass-card" style={{ padding: '15px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                            <div style={{ fontSize: '1.5rem' }}>📄</div>
+                                            <span style={{ fontWeight: '500', fontSize: '0.9rem' }}>{paper.title}</span>
+                                            <a href={paper.url || paper.file_url} target="_blank" rel="noopener noreferrer" className="action-btn" style={{ fontSize: '0.8rem', padding: '6px 12px', textAlign: 'center', width: '100%' }}>View PDF</a>
                                         </div>
                                     ))}
                                 </div>
@@ -734,7 +748,7 @@ function App() {
 
                 {adminView === 'content' && (
                     <div className="glass-card" style={{ padding: '24px' }}>
-                        <div style={{ display: 'flex', justifyBetween: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
                             <h3>Module Management</h3>
                             <button className="auth-btn" style={{ width: 'fit-content', padding: '8px 20px' }} onClick={() => { setEditingModule({ title: '', grade: 6, description: '', category: 'Foundation', content_json: {} }); setIsModuleModalOpen(true); }}>+ Add New Module</button>
                         </div>
@@ -765,86 +779,146 @@ function App() {
                         {isModuleModalOpen && (
                             <div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, padding: '20px' }}>
                                 <div className="glass-card" style={{ width: '100%', maxWidth: '600px', padding: '30px', maxHeight: '90vh', overflowY: 'auto' }}>
-                                    <h3>{editingModule.id ? 'Edit Module' : 'Add New Module'}</h3>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <h3>{editingModule.id ? 'Edit Module' : 'Add New Module'}</h3>
+                                        <div className="admin-nav" style={{ margin: 0 }}>
+                                            <button type="button" className={`tab-btn ${editorMode === 'edit' ? 'active' : ''}`} onClick={() => setEditorMode('edit')}>Edit</button>
+                                            <button type="button" className={`tab-btn ${editorMode === 'preview' ? 'active' : ''}`} onClick={() => setEditorMode('preview')}>Preview</button>
+                                        </div>
+                                    </div>
+
                                     <form onSubmit={handleSaveModule} style={{ marginTop: '20px' }}>
-                                        <div className="input-group">
-                                            <label>Title</label>
-                                            <input type="text" value={editingModule.title} onChange={e => setEditingModule({ ...editingModule, title: e.target.value })} required />
-                                        </div>
-                                        <div className="input-group">
-                                            <label>Grade</label>
-                                            <select value={editingModule.grade} onChange={e => setEditingModule({ ...editingModule, grade: e.target.value })}>
-                                                {[6, 7, 8, 9, 10, 11].map(g => <option key={g} value={g}>Grade {g}</option>)}
-                                            </select>
-                                        </div>
-                                        <div className="input-group">
-                                            <label>Category</label>
-                                            <input type="text" value={editingModule.category} onChange={e => setEditingModule({ ...editingModule, category: e.target.value })} required />
-                                        </div>
-                                        <div className="input-group">
-                                            <label>Description</label>
-                                            <textarea style={{ width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--glass-border)', borderRadius: '8px', color: '#fff', padding: '12px' }} rows="3" value={editingModule.description} onChange={e => setEditingModule({ ...editingModule, description: e.target.value })} required />
-                                        </div>
-
-                                        <hr style={{ margin: '30px 0', border: '0', borderTop: '1px solid var(--glass-border)' }} />
-                                        <h4>Study Content (Notes HTML)</h4>
-                                        <textarea
-                                            style={{ width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--glass-border)', borderRadius: '8px', color: '#fff', padding: '12px', marginTop: '10px' }}
-                                            rows="5"
-                                            value={editingModule.content_json?.notes || ''}
-                                            onChange={e => setEditingModule({ ...editingModule, content_json: { ...editingModule.content_json, notes: e.target.value } })}
-                                            placeholder="<h3>Notes</h3><p>Text here...</p>"
-                                        />
-
-                                        <hr style={{ margin: '30px 0', border: '0', borderTop: '1px solid var(--glass-border)' }} />
-                                        <h4>Quiz Management</h4>
-                                        <div className="input-group" style={{ marginTop: '10px' }}>
-                                            <label>Time Limit (Seconds)</label>
-                                            <input type="number" value={moduleQuiz.time_limit} onChange={e => setModuleQuiz({ ...moduleQuiz, time_limit: parseInt(e.target.value) })} />
-                                        </div>
-                                        <div className="input-group">
-                                            <label>Max Attempts</label>
-                                            <input type="number" value={moduleQuiz.max_attempts} onChange={e => setModuleQuiz({ ...moduleQuiz, max_attempts: parseInt(e.target.value) })} />
-                                        </div>
-
-                                        <p style={{ marginTop: '15px', fontWeight: 'bold' }}>Questions ({moduleQuiz.questions?.length || 0})</p>
-                                        <button type="button" className="tab-btn" style={{ fontSize: '0.8rem', marginTop: '10px' }} onClick={() => setModuleQuiz({ ...moduleQuiz, questions: [...(moduleQuiz.questions || []), { id: Date.now(), question: '', options: ['', '', '', ''], answer: 0 }] })}>+ Add Question</button>
-
-                                        {(moduleQuiz.questions || []).map((q, idx) => (
-                                            <div key={q.id || idx} style={{ marginTop: '20px', padding: '15px', background: 'rgba(255,255,255,0.03)', borderRadius: '8px' }}>
-                                                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                                                    <label>Question {idx + 1}</label>
-                                                    <button type="button" style={{ color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer' }} onClick={() => setModuleQuiz({ ...moduleQuiz, questions: moduleQuiz.questions.filter((_, i) => i !== idx) })}>Remove</button>
+                                        {editorMode === 'edit' ? (
+                                            <>
+                                                <div className="input-group">
+                                                    <label>Title</label>
+                                                    <input type="text" value={editingModule.title} onChange={e => setEditingModule({ ...editingModule, title: e.target.value })} required />
                                                 </div>
-                                                <input type="text" style={{ marginTop: '5px' }} value={q.question} onChange={e => {
-                                                    const newQs = [...moduleQuiz.questions];
-                                                    newQs[idx].question = e.target.value;
-                                                    setModuleQuiz({ ...moduleQuiz, questions: newQs });
-                                                }} />
-                                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '10px' }}>
-                                                    {q.options.map((opt, optIdx) => (
-                                                        <div key={optIdx}>
-                                                            <input type="text" placeholder={`Option ${optIdx + 1}`} value={opt} onChange={e => {
-                                                                const newQs = [...moduleQuiz.questions];
-                                                                newQs[idx].options[optIdx] = e.target.value;
-                                                                setModuleQuiz({ ...moduleQuiz, questions: newQs });
+                                                <div className="input-group">
+                                                    <label>Grade</label>
+                                                    <select value={editingModule.grade} onChange={e => setEditingModule({ ...editingModule, grade: e.target.value })}>
+                                                        {[6, 7, 8, 9, 10, 11].map(g => <option key={g} value={g}>Grade {g}</option>)}
+                                                    </select>
+                                                </div>
+                                                <div className="input-group">
+                                                    <label>Category</label>
+                                                    <input type="text" value={editingModule.category} onChange={e => setEditingModule({ ...editingModule, category: e.target.value })} required />
+                                                </div>
+                                                <div className="input-group">
+                                                    <label>Description</label>
+                                                    <textarea style={{ width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--glass-border)', borderRadius: '8px', color: '#fff', padding: '12px' }} rows="3" value={editingModule.description} onChange={e => setEditingModule({ ...editingModule, description: e.target.value })} required />
+                                                </div>
+
+                                                <div className="input-group">
+                                                    <label>Video URL (YouTube Embed Link)</label>
+                                                    <input type="text" placeholder="https://www.youtube.com/embed/..." value={editingModule.content_json?.videoUrl || ''} onChange={e => setEditingModule({ ...editingModule, content_json: { ...editingModule.content_json, videoUrl: e.target.value } })} />
+                                                </div>
+
+                                                <hr style={{ margin: '30px 0', border: '0', borderTop: '1px solid var(--glass-border)' }} />
+                                                <h4>Study Content (Notes HTML)</h4>
+                                                <textarea
+                                                    style={{ width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--glass-border)', borderRadius: '8px', color: '#fff', padding: '12px', marginTop: '10px' }}
+                                                    rows="5"
+                                                    value={editingModule.content_json?.notes || ''}
+                                                    onChange={e => setEditingModule({ ...editingModule, content_json: { ...editingModule.content_json, notes: e.target.value } })}
+                                                    placeholder="<h3>Notes</h3><p>Text here...</p>"
+                                                />
+
+                                                <hr style={{ margin: '30px 0', border: '0', borderTop: '1px solid var(--glass-border)' }} />
+                                                <h4>Paper Management</h4>
+                                                <div className="paper-list-admin" style={{ marginTop: '10px' }}>
+                                                    {modulePapers.map((paper, pIdx) => (
+                                                        <div key={pIdx} style={{ display: 'flex', gap: '10px', marginBottom: '10px', alignItems: 'center' }}>
+                                                            <input type="text" placeholder="Paper Title" value={paper.title} onChange={e => {
+                                                                const newP = [...modulePapers];
+                                                                newP[pIdx].title = e.target.value;
+                                                                setModulePapers(newP);
                                                             }} />
-                                                            <label style={{ fontSize: '0.7rem' }}>
-                                                                <input type="radio" name={`q-${idx}`} checked={q.answer === optIdx} onChange={() => {
-                                                                    const newQs = [...moduleQuiz.questions];
-                                                                    newQs[idx].answer = optIdx;
-                                                                    setModuleQuiz({ ...moduleQuiz, questions: newQs });
-                                                                }} /> Correct
-                                                            </label>
+                                                            <input type="text" placeholder="URL" value={paper.url || pIdx.file_url || ''} onChange={e => {
+                                                                const newP = [...modulePapers];
+                                                                newP[pIdx].url = e.target.value;
+                                                                setModulePapers(newP);
+                                                            }} />
+                                                            <button type="button" style={{ color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer' }} onClick={() => setModulePapers(modulePapers.filter((_, i) => i !== pIdx))}>×</button>
                                                         </div>
                                                     ))}
+                                                    <button type="button" className="tab-btn" style={{ fontSize: '0.8rem' }} onClick={() => setModulePapers([...modulePapers, { title: '', url: '' }])}>+ Add Paper</button>
+                                                </div>
+
+                                                <hr style={{ margin: '30px 0', border: '0', borderTop: '1px solid var(--glass-border)' }} />
+                                                <h4>Quiz Management</h4>
+                                                <div className="input-group" style={{ marginTop: '10px' }}>
+                                                    <label>Time Limit (Seconds)</label>
+                                                    <input type="number" value={moduleQuiz.time_limit} onChange={e => setModuleQuiz({ ...moduleQuiz, time_limit: parseInt(e.target.value) })} />
+                                                </div>
+                                                <div className="input-group">
+                                                    <label>Max Attempts</label>
+                                                    <input type="number" value={moduleQuiz.max_attempts} onChange={e => setModuleQuiz({ ...moduleQuiz, max_attempts: parseInt(e.target.value) })} />
+                                                </div>
+
+                                                <p style={{ marginTop: '15px', fontWeight: 'bold' }}>Questions ({moduleQuiz.questions?.length || 0})</p>
+                                                <button type="button" className="tab-btn" style={{ fontSize: '0.8rem', marginTop: '10px' }} onClick={() => setModuleQuiz({ ...moduleQuiz, questions: [...(moduleQuiz.questions || []), { id: Date.now(), question: '', options: ['', '', '', ''], answer: 0 }] })}>+ Add Question</button>
+
+                                                {(moduleQuiz.questions || []).map((q, idx) => (
+                                                    <div key={q.id || idx} style={{ marginTop: '20px', padding: '15px', background: 'rgba(255,255,255,0.03)', borderRadius: '8px' }}>
+                                                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                                            <label>Question {idx + 1}</label>
+                                                            <button type="button" style={{ color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer' }} onClick={() => setModuleQuiz({ ...moduleQuiz, questions: moduleQuiz.questions.filter((_, i) => i !== idx) })}>Remove</button>
+                                                        </div>
+                                                        <input type="text" style={{ marginTop: '5px' }} value={q.question} onChange={e => {
+                                                            const newQs = [...moduleQuiz.questions];
+                                                            newQs[idx].question = e.target.value;
+                                                            setModuleQuiz({ ...moduleQuiz, questions: newQs });
+                                                        }} />
+                                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '10px' }}>
+                                                            {q.options.map((opt, optIdx) => (
+                                                                <div key={optIdx}>
+                                                                    <input type="text" placeholder={`Option ${optIdx + 1}`} value={opt} onChange={e => {
+                                                                        const newQs = [...moduleQuiz.questions];
+                                                                        newQs[idx].options[optIdx] = e.target.value;
+                                                                        setModuleQuiz({ ...moduleQuiz, questions: newQs });
+                                                                    }} />
+                                                                    <label style={{ fontSize: '0.7rem' }}>
+                                                                        <input type="radio" name={`q-${idx}`} checked={q.answer === optIdx} onChange={() => {
+                                                                            const newQs = [...moduleQuiz.questions];
+                                                                            newQs[idx].answer = optIdx;
+                                                                            setModuleQuiz({ ...moduleQuiz, questions: newQs });
+                                                                        }} /> Correct
+                                                                    </label>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </>
+                                        ) : (
+                                            <div className="preview-container" style={{ textAlign: 'left' }}>
+                                                <header className="module-header" style={{ border: 'none', padding: 0, marginBottom: '20px' }}>
+                                                    <span className="category-tag">{editingModule.category}</span>
+                                                    <h1 style={{ fontSize: '1.8rem', marginTop: '8px' }}>{editingModule.title}</h1>
+                                                </header>
+                                                <div className="content-area">
+                                                    <div dangerouslySetInnerHTML={{ __html: editingModule.content_json?.notes || '<p>No notes added yet.</p>' }} />
+                                                    {editingModule.content_json?.videoUrl && (
+                                                        <div className="video-container" style={{ marginTop: '20px' }}>
+                                                            <iframe src={editingModule.content_json.videoUrl} title="Module Video" frameBorder="0" allowFullScreen></iframe>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                <div style={{ marginTop: '30px', padding: '20px', background: 'rgba(255,255,255,0.05)', borderRadius: '12px' }}>
+                                                    <h4>Papers</h4>
+                                                    {modulePapers.length === 0 ? <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>No papers.</p> : (
+                                                        <ul style={{ marginTop: '10px' }}>
+                                                            {modulePapers.map((p, i) => <li key={i}>{p.title}</li>)}
+                                                        </ul>
+                                                    )}
                                                 </div>
                                             </div>
-                                        ))}
+                                        )}
 
-                                        <div style={{ display: 'flex', gap: '10px', marginTop: '40px' }}>
-                                            <button type="submit" className="auth-btn" disabled={loading}>{loading ? 'Saving...' : 'Save All Changes'}</button>
-                                            <button type="button" className="tab-btn" onClick={() => setIsModuleModalOpen(false)}>Cancel</button>
+                                        <div style={{ display: 'flex', gap: '10px', marginTop: '40px', position: 'sticky', bottom: 0, background: 'var(--glass-bg)', padding: '10px 0', zIndex: 5 }}>
+                                            <button type="submit" className="auth-btn" disabled={loading} style={{ margin: 0 }}>{loading ? 'Saving...' : 'Save All Changes'}</button>
+                                            <button type="button" className="tab-btn" onClick={() => setIsModuleModalOpen(false)} style={{ margin: 0 }}>Cancel</button>
                                         </div>
                                     </form>
                                 </div>
