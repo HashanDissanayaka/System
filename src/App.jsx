@@ -31,6 +31,8 @@ function App() {
     const [score, setScore] = useState(0);
     const [attempts, setAttempts] = useState({});
     const [modules, setModules] = useState([]);
+    const [activeQuiz, setActiveQuiz] = useState(null);
+    const [activePapers, setActivePapers] = useState([]);
 
     useEffect(() => {
         let timer;
@@ -175,10 +177,73 @@ function App() {
     // Admin Functions
     const [allStudents, setAllStudents] = useState([]);
     const [adminView, setAdminTab] = useState('users'); // 'users', 'content'
+    const [cmsModules, setCmsModules] = useState([]);
+    const [editingModule, setEditingModule] = useState(null);
+    const [isModuleModalOpen, setIsModuleModalOpen] = useState(false);
+    const [moduleQuiz, setModuleQuiz] = useState({ questions: [], time_limit: 300, max_attempts: 3 });
+    const [modulePapers, setModulePapers] = useState([]);
 
     const fetchAllStudents = async () => {
         const { data } = await supabase.from('students').select('*').order('created_at', { ascending: false });
         if (data) setAllStudents(data);
+    };
+
+    const fetchCmsContent = async () => {
+        const { data: modulesData } = await supabase.from('modules').select('*').order('grade', { ascending: true });
+        if (modulesData) setCmsModules(modulesData);
+    };
+
+    const openModuleEditor = async (m) => {
+        setEditingModule(m);
+        // Fetch quiz
+        const { data: qData } = await supabase.from('quizzes').select('*').eq('module_id', m.id).maybeSingle();
+        setModuleQuiz(qData || { questions: [], time_limit: 300, max_attempts: 3 });
+        // Fetch papers
+        const { data: pData } = await supabase.from('papers').select('*').eq('module_id', m.id);
+        setModulePapers(pData || []);
+        setIsModuleModalOpen(true);
+    };
+
+    const handleSaveModule = async (e) => {
+        e.preventDefault();
+        setLoading(true);
+        const moduleData = {
+            title: editingModule.title,
+            grade: parseInt(editingModule.grade),
+            description: editingModule.description,
+            category: editingModule.category,
+            content_json: editingModule.content_json || {}
+        };
+
+        let currentModuleId = editingModule.id;
+        if (editingModule.id) {
+            await supabase.from('modules').update(moduleData).eq('id', editingModule.id);
+        } else {
+            const { data } = await supabase.from('modules').insert([moduleData]).select().single();
+            currentModuleId = data.id;
+        }
+
+        // Save Quiz
+        const quizData = { ...moduleQuiz, module_id: currentModuleId };
+        if (moduleQuiz.id) {
+            await supabase.from('quizzes').update(quizData).eq('id', moduleQuiz.id);
+        } else {
+            await supabase.from('quizzes').insert([quizData]);
+        }
+
+        // Save Papers (Simplified: replace all for now or just add/delete)
+        // For simplicity in this demo, we'll just handle adding one and show list
+
+        setIsModuleModalOpen(false);
+        fetchCmsContent();
+        setLoading(false);
+    };
+
+    const deleteModule = async (id) => {
+        if (window.confirm('Are you sure you want to delete this module? This will also delete its quizzes and papers.')) {
+            const { error } = await supabase.from('modules').delete().eq('id', id);
+            if (!error) fetchCmsContent();
+        }
     };
 
     const updateStudentStatus = async (id, newStatus) => {
@@ -190,25 +255,31 @@ function App() {
     useEffect(() => {
         if (view === 'admin-dashboard') {
             fetchAllStudents();
+            fetchCmsContent();
         }
     }, [view]);
 
-    const openModule = (module) => {
+    const openModule = async (module) => {
         setCurrentModule(module);
         setModuleView('overview');
         setView('module-detail');
+        // Fetch quiz and papers for student
+        const { data: qData } = await supabase.from('quizzes').select('*').eq('module_id', module.id).maybeSingle();
+        setActiveQuiz(qData);
+        const { data: pData } = await supabase.from('papers').select('*').eq('module_id', module.id);
+        setActivePapers(pData || []);
     };
 
     const startQuiz = async () => {
         const moduleAttempts = attempts[currentModule.id] || 0;
-        if (moduleAttempts >= currentModule.quiz.allowedAttempts) {
+        if (moduleAttempts >= (activeQuiz?.max_attempts || 3)) {
             alert('You have reached the maximum number of attempts for this quiz.');
             return;
         }
 
         setQuizActive(true);
         setQuizFinished(false);
-        setTimeLeft(currentModule.quiz.timeLimit);
+        setTimeLeft(activeQuiz?.time_limit || 300);
         setAnswers({});
         setModuleView('quiz');
     };
@@ -222,7 +293,7 @@ function App() {
         setQuizFinished(true);
 
         let finalScore = 0;
-        currentModule.quiz.questions.forEach(q => {
+        (activeQuiz?.questions || []).forEach(q => {
             if (answers[q.id] === q.answer) {
                 finalScore += 1;
             }
@@ -449,13 +520,13 @@ function App() {
 
                     {moduleView === 'content' && (
                         <div className="content-area">
-                            {currentModule.content ? (
+                            {currentModule.content_json ? (
                                 <>
-                                    <div dangerouslySetInnerHTML={{ __html: currentModule.content.notes }} />
-                                    {currentModule.content.image && <img src={currentModule.content.image} alt="Module visual" className="content-img" />}
-                                    {currentModule.content.videoUrl && (
+                                    <div dangerouslySetInnerHTML={{ __html: currentModule.content_json.notes }} />
+                                    {currentModule.content_json.image && <img src={currentModule.content_json.image} alt="Module visual" className="content-img" />}
+                                    {currentModule.content_json.videoUrl && (
                                         <div className="video-container">
-                                            <iframe src={currentModule.content.videoUrl} title="Module Video" frameBorder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen></iframe>
+                                            <iframe src={currentModule.content_json.videoUrl} title="Module Video" frameBorder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen></iframe>
                                         </div>
                                     )}
                                 </>
@@ -467,20 +538,20 @@ function App() {
 
                     {moduleView === 'quiz' && (
                         <div className="quiz-area">
-                            {!currentModule.quiz ? (
+                            {!activeQuiz ? (
                                 <p>Quiz is coming soon for this module!</p>
                             ) : quizActive ? (
                                 <>
                                     <div className="quiz-timer">⏱ {formatTime(timeLeft)}</div>
-                                    {currentModule.quiz.questions.map((q, qIndex) => (
-                                        <div key={q.id} className="question-card glass-card">
+                                    {activeQuiz.questions.map((q, qIndex) => (
+                                        <div key={q.id || qIndex} className="question-card glass-card">
                                             <h4>{qIndex + 1}. {q.question}</h4>
                                             <div className="options-list">
                                                 {q.options.map((opt, optIndex) => (
                                                     <button
                                                         key={optIndex}
-                                                        className={`option-btn ${answers[q.id] === optIndex ? 'selected' : ''}`}
-                                                        onClick={() => handleAnswerChange(q.id, optIndex)}
+                                                        className={`option-btn ${answers[q.id || qIndex] === optIndex ? 'selected' : ''}`}
+                                                        onClick={() => handleAnswerChange(q.id || qIndex, optIndex)}
                                                     >
                                                         {opt}
                                                     </button>
@@ -494,23 +565,23 @@ function App() {
                                 <div className="results-card glass-card">
                                     <h2 style={{ marginBottom: '32px' }}>Quiz Results</h2>
                                     <div className="score-circle">
-                                        <big>{score}/{currentModule.quiz.questions.length}</big>
+                                        <big>{score}/{activeQuiz.questions.length}</big>
                                         <span>Marks</span>
                                     </div>
-                                    <h3>{score === currentModule.quiz.questions.length ? 'Excellent! 🏆' : score > 0 ? 'Good Job! 👍' : 'Keep practicing! 💪'}</h3>
+                                    <h3>{score === activeQuiz.questions.length ? 'Excellent! 🏆' : score > 0 ? 'Good Job! 👍' : 'Keep practicing! 💪'}</h3>
 
                                     <div className="review-section">
                                         <h3 style={{ marginBottom: '24px' }}>Review Answers</h3>
-                                        {currentModule.quiz.questions.map((q, qIndex) => (
-                                            <div key={q.id} className="question-card glass-card" style={{ background: 'transparent' }}>
-                                                <h4 style={{ color: answers[q.id] === q.answer ? '#22c55e' : '#ef4444' }}>
-                                                    {qIndex + 1}. {q.question} {answers[q.id] === q.answer ? '✓' : '✗'}
+                                        {activeQuiz.questions.map((q, qIndex) => (
+                                            <div key={q.id || qIndex} className="question-card glass-card" style={{ background: 'transparent' }}>
+                                                <h4 style={{ color: answers[q.id || qIndex] === q.answer ? '#22c55e' : '#ef4444' }}>
+                                                    {qIndex + 1}. {q.question} {answers[q.id || qIndex] === q.answer ? '✓' : '✗'}
                                                 </h4>
                                                 <div className="options-list">
                                                     {q.options.map((opt, optIndex) => (
                                                         <div
                                                             key={optIndex}
-                                                            className={`option-btn ${optIndex === q.answer ? 'correct' : (answers[q.id] === optIndex ? 'wrong' : '')}`}
+                                                            className={`option-btn ${optIndex === q.answer ? 'correct' : (answers[q.id || qIndex] === optIndex ? 'wrong' : '')}`}
                                                             style={{ cursor: 'default' }}
                                                         >
                                                             {opt}
@@ -531,19 +602,19 @@ function App() {
                                     <div className="quiz-meta">
                                         <div className="meta-item">
                                             <span>Time Limit</span>
-                                            <b>{currentModule.quiz.timeLimit / 60} min</b>
+                                            <b>{activeQuiz.time_limit / 60} min</b>
                                         </div>
                                         <div className="meta-item">
                                             <span>Questions</span>
-                                            <b>{currentModule.quiz.questions.length}</b>
+                                            <b>{activeQuiz.questions.length}</b>
                                         </div>
                                         <div className="meta-item">
                                             <span>Attempts</span>
-                                            <b>{attempts[currentModule.id] || 0} / {currentModule.quiz.allowedAttempts}</b>
+                                            <b>{attempts[currentModule.id] || 0} / {activeQuiz.max_attempts}</b>
                                         </div>
                                     </div>
 
-                                    {(attempts[currentModule.id] || 0) < currentModule.quiz.allowedAttempts ? (
+                                    {(attempts[currentModule.id] || 0) < activeQuiz.max_attempts ? (
                                         <button className="submit-btn" onClick={startQuiz}>Start Quiz</button>
                                     ) : (
                                         <p style={{ color: '#ef4444', fontWeight: 'bold' }}>You've used all attempts for this quiz.</p>
@@ -555,14 +626,14 @@ function App() {
 
                     {moduleView === 'papers' && (
                         <div className="papers-area">
-                            {!currentModule.papers || currentModule.papers.length === 0 ? (
+                            {activePapers.length === 0 ? (
                                 <p>No papers attached to this module yet.</p>
                             ) : (
                                 <div className="paper-list">
-                                    {currentModule.papers.map(paper => (
+                                    {activePapers.map(paper => (
                                         <div key={paper.id} className="paper-item glass-card">
                                             <span>{paper.title}</span>
-                                            <a href={paper.url} target="_blank" rel="noopener noreferrer">View / Download</a>
+                                            <a href={paper.url || paper.file_url} target="_blank" rel="noopener noreferrer">View / Download</a>
                                         </div>
                                     ))}
                                 </div>
@@ -609,7 +680,7 @@ function App() {
 
                 <div className="admin-nav">
                     <button className={`tab-btn ${adminView === 'users' ? 'active' : ''}`} onClick={() => setAdminTab('users')}>Users</button>
-                    <button className={`tab-btn ${adminView === 'content' ? 'active' : ''}`} onClick={() => setAdminTab('content')}>Content (Coming Soon)</button>
+                    <button className={`tab-btn ${adminView === 'content' ? 'active' : ''}`} onClick={() => setAdminTab('content')}>Content</button>
                 </div>
 
                 {adminView === 'users' && (
@@ -654,6 +725,127 @@ function App() {
                             </tbody>
                         </table>
                         {allStudents.filter(s => s.role !== 'admin').length === 0 && <p style={{ textAlign: 'center', marginTop: '20px' }}>No students registered yet.</p>}
+                    </div>
+                )}
+
+                {adminView === 'content' && (
+                    <div className="glass-card" style={{ padding: '24px' }}>
+                        <div style={{ display: 'flex', justifyBetween: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                            <h3>Module Management</h3>
+                            <button className="auth-btn" style={{ width: 'fit-content', padding: '8px 20px' }} onClick={() => { setEditingModule({ title: '', grade: 6, description: '', category: 'Foundation', content_json: {} }); setIsModuleModalOpen(true); }}>+ Add New Module</button>
+                        </div>
+                        <table className="admin-table">
+                            <thead>
+                                <tr>
+                                    <th>Grade</th>
+                                    <th>Title</th>
+                                    <th>Category</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {cmsModules.map(m => (
+                                    <tr key={m.id}>
+                                        <td>Grade {m.grade}</td>
+                                        <td>{m.title}</td>
+                                        <td>{m.category}</td>
+                                        <td className="admin-actions">
+                                            <button className="action-icon-btn" onClick={() => openModuleEditor(m)}>Edit</button>
+                                            <button className="action-icon-btn action-disable" onClick={() => deleteModule(m.id)}>Delete</button>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+
+                        {isModuleModalOpen && (
+                            <div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, padding: '20px' }}>
+                                <div className="glass-card" style={{ width: '100%', maxWidth: '600px', padding: '30px', maxHeight: '90vh', overflowY: 'auto' }}>
+                                    <h3>{editingModule.id ? 'Edit Module' : 'Add New Module'}</h3>
+                                    <form onSubmit={handleSaveModule} style={{ marginTop: '20px' }}>
+                                        <div className="input-group">
+                                            <label>Title</label>
+                                            <input type="text" value={editingModule.title} onChange={e => setEditingModule({ ...editingModule, title: e.target.value })} required />
+                                        </div>
+                                        <div className="input-group">
+                                            <label>Grade</label>
+                                            <select value={editingModule.grade} onChange={e => setEditingModule({ ...editingModule, grade: e.target.value })}>
+                                                {[6, 7, 8, 9, 10, 11].map(g => <option key={g} value={g}>Grade {g}</option>)}
+                                            </select>
+                                        </div>
+                                        <div className="input-group">
+                                            <label>Category</label>
+                                            <input type="text" value={editingModule.category} onChange={e => setEditingModule({ ...editingModule, category: e.target.value })} required />
+                                        </div>
+                                        <div className="input-group">
+                                            <label>Description</label>
+                                            <textarea style={{ width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--glass-border)', borderRadius: '8px', color: '#fff', padding: '12px' }} rows="3" value={editingModule.description} onChange={e => setEditingModule({ ...editingModule, description: e.target.value })} required />
+                                        </div>
+
+                                        <hr style={{ margin: '30px 0', border: '0', borderTop: '1px solid var(--glass-border)' }} />
+                                        <h4>Study Content (Notes HTML)</h4>
+                                        <textarea
+                                            style={{ width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--glass-border)', borderRadius: '8px', color: '#fff', padding: '12px', marginTop: '10px' }}
+                                            rows="5"
+                                            value={editingModule.content_json?.notes || ''}
+                                            onChange={e => setEditingModule({ ...editingModule, content_json: { ...editingModule.content_json, notes: e.target.value } })}
+                                            placeholder="<h3>Notes</h3><p>Text here...</p>"
+                                        />
+
+                                        <hr style={{ margin: '30px 0', border: '0', borderTop: '1px solid var(--glass-border)' }} />
+                                        <h4>Quiz Management</h4>
+                                        <div className="input-group" style={{ marginTop: '10px' }}>
+                                            <label>Time Limit (Seconds)</label>
+                                            <input type="number" value={moduleQuiz.time_limit} onChange={e => setModuleQuiz({ ...moduleQuiz, time_limit: parseInt(e.target.value) })} />
+                                        </div>
+                                        <div className="input-group">
+                                            <label>Max Attempts</label>
+                                            <input type="number" value={moduleQuiz.max_attempts} onChange={e => setModuleQuiz({ ...moduleQuiz, max_attempts: parseInt(e.target.value) })} />
+                                        </div>
+
+                                        <p style={{ marginTop: '15px', fontWeight: 'bold' }}>Questions ({moduleQuiz.questions?.length || 0})</p>
+                                        <button type="button" className="tab-btn" style={{ fontSize: '0.8rem', marginTop: '10px' }} onClick={() => setModuleQuiz({ ...moduleQuiz, questions: [...(moduleQuiz.questions || []), { id: Date.now(), question: '', options: ['', '', '', ''], answer: 0 }] })}>+ Add Question</button>
+
+                                        {(moduleQuiz.questions || []).map((q, idx) => (
+                                            <div key={q.id || idx} style={{ marginTop: '20px', padding: '15px', background: 'rgba(255,255,255,0.03)', borderRadius: '8px' }}>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                                    <label>Question {idx + 1}</label>
+                                                    <button type="button" style={{ color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer' }} onClick={() => setModuleQuiz({ ...moduleQuiz, questions: moduleQuiz.questions.filter((_, i) => i !== idx) })}>Remove</button>
+                                                </div>
+                                                <input type="text" style={{ marginTop: '5px' }} value={q.question} onChange={e => {
+                                                    const newQs = [...moduleQuiz.questions];
+                                                    newQs[idx].question = e.target.value;
+                                                    setModuleQuiz({ ...moduleQuiz, questions: newQs });
+                                                }} />
+                                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '10px' }}>
+                                                    {q.options.map((opt, optIdx) => (
+                                                        <div key={optIdx}>
+                                                            <input type="text" placeholder={`Option ${optIdx + 1}`} value={opt} onChange={e => {
+                                                                const newQs = [...moduleQuiz.questions];
+                                                                newQs[idx].options[optIdx] = e.target.value;
+                                                                setModuleQuiz({ ...moduleQuiz, questions: newQs });
+                                                            }} />
+                                                            <label style={{ fontSize: '0.7rem' }}>
+                                                                <input type="radio" name={`q-${idx}`} checked={q.answer === optIdx} onChange={() => {
+                                                                    const newQs = [...moduleQuiz.questions];
+                                                                    newQs[idx].answer = optIdx;
+                                                                    setModuleQuiz({ ...moduleQuiz, questions: newQs });
+                                                                }} /> Correct
+                                                            </label>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        ))}
+
+                                        <div style={{ display: 'flex', gap: '10px', marginTop: '40px' }}>
+                                            <button type="submit" className="auth-btn" disabled={loading}>{loading ? 'Saving...' : 'Save All Changes'}</button>
+                                            <button type="button" className="tab-btn" onClick={() => setIsModuleModalOpen(false)}>Cancel</button>
+                                        </div>
+                                    </form>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 )}
             </div>
