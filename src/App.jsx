@@ -34,21 +34,48 @@ function App() {
     const [activeQuiz, setActiveQuiz] = useState(null);
     const [activePapers, setActivePapers] = useState([]);
 
-    // Auto-generate student code from name
+    // Auto-generate sequential student code from name (e.g. NAME-0001)
     useEffect(() => {
-        if (view === 'register' && regName.trim() && !regCode.startsWith('ADM-')) {
-            // Only generate if empty or if name changed and it was an auto-generated one
+        const generateCode = async () => {
+            // Cleanup logic: clear regCode if regName is empty and it's not an admin code
+            if (!regName.trim() && !regCode.startsWith('ADM-')) {
+                setRegCode('');
+                return;
+            }
+
+            if (view !== 'register' || !regName.trim() || regCode.startsWith('ADM-')) return;
+
             const namePart = regName.trim().split(' ')[0].replace(/[^a-zA-Z]/g, '').toUpperCase();
-            if (namePart) {
-                // If regCode doesn't match the current name part + some pattern, or is empty
-                if (!regCode || !regCode.startsWith(namePart)) {
-                    const randomPart = Math.floor(1000 + Math.random() * 9000);
-                    setRegCode(`${namePart}-${randomPart}`);
+            if (!namePart) return;
+
+            // Only generate if it doesn't already match the current prefix
+            if (!regCode.startsWith(namePart)) {
+                try {
+                    const { data } = await supabase
+                        .from('students')
+                        .select('student_code')
+                        .ilike('student_code', `${namePart}-%`)
+                        .order('student_code', { ascending: false })
+                        .limit(1);
+
+                    let nextNum = 1;
+                    if (data && data.length > 0) {
+                        const lastCode = data[0].student_code;
+                        const lastParts = lastCode.split('-');
+                        const lastNum = parseInt(lastParts[lastParts.length - 1]);
+                        if (!isNaN(lastNum)) nextNum = lastNum + 1;
+                    }
+
+                    const formattedNum = String(nextNum).padStart(4, '0');
+                    setRegCode(`${namePart}-${formattedNum}`);
+                } catch (err) {
+                    console.error("Code generation error:", err);
                 }
             }
-        } else if (view === 'register' && !regName.trim() && !regCode.startsWith('ADM-')) {
-            setRegCode('');
-        }
+        };
+
+        const timer = setTimeout(generateCode, 800);
+        return () => clearTimeout(timer);
     }, [regName, view]);
 
     useEffect(() => {
