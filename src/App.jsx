@@ -448,7 +448,7 @@ function App() {
           .pill-value { font-size: 1.1rem; font-weight: 600; color: #fff; }
         `}</style>
                 <div className="auth-card glass-card">
-                    <h1 className="gradient-text">ICT LMS</h1>
+                    <h1 className="gradient-text">ICT With Hashan Dissanayaka</h1>
                     <p>Welcome Back!</p>
                     <form onSubmit={handleLogin}>
                         <div className="input-group">
@@ -1138,7 +1138,7 @@ function App() {
             </section>
 
             <footer style={{ position: 'fixed', bottom: 30, right: 30, fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                ICT LMS v1.1 | Hashan Dissanayaka
+                ICT With Hashan Dissanayaka v1.1
             </footer>
         </div>
     );
