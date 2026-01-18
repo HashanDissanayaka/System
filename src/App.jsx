@@ -387,10 +387,12 @@ function App() {
                                     <span className="pill-label">Name</span>
                                     <span className="pill-value">{foundStudent.fullname}</span>
                                 </div>
-                                <div style={{ marginTop: '12px' }}>
-                                    <span className="pill-label">Grade</span>
-                                    <span className="pill-value">Grade {foundStudent.grade}</span>
-                                </div>
+                                {foundStudent.role !== 'admin' && (
+                                    <div style={{ marginTop: '12px' }}>
+                                        <span className="pill-label">Grade</span>
+                                        <span className="pill-value">Grade {foundStudent.grade}</span>
+                                    </div>
+                                )}
                             </div>
                         )}
 
