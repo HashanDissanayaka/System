@@ -209,46 +209,58 @@ function App() {
     const handleSaveModule = async (e) => {
         e.preventDefault();
         setLoading(true);
-        const moduleData = {
-            title: editingModule.title,
-            grade: parseInt(editingModule.grade),
-            description: editingModule.description,
-            category: editingModule.category,
-            content_json: editingModule.content_json || {}
-        };
+        try {
+            const moduleData = {
+                title: editingModule.title,
+                grade: parseInt(editingModule.grade),
+                description: editingModule.description,
+                category: editingModule.category,
+                content_json: editingModule.content_json || {}
+            };
 
-        let currentModuleId = editingModule.id;
-        if (editingModule.id) {
-            await supabase.from('modules').update(moduleData).eq('id', editingModule.id);
-        } else {
-            const { data } = await supabase.from('modules').insert([moduleData]).select().single();
-            currentModuleId = data.id;
-        }
+            let currentModuleId = editingModule.id;
+            if (editingModule.id) {
+                const { error } = await supabase.from('modules').update(moduleData).eq('id', editingModule.id);
+                if (error) throw error;
+            } else {
+                const { data, error } = await supabase.from('modules').insert([moduleData]).select().single();
+                if (error) throw error;
+                currentModuleId = data.id;
+            }
 
-        // Save Quiz
-        const quizData = { ...moduleQuiz, module_id: currentModuleId };
-        if (moduleQuiz.id) {
-            await supabase.from('quizzes').update(quizData).eq('id', moduleQuiz.id);
-        } else {
-            await supabase.from('quizzes').insert([quizData]);
-        }
+            // Save Quiz
+            const quizData = { ...moduleQuiz, module_id: currentModuleId };
+            delete quizData.id; // Remove ID if it's a new record or to avoid conflicts during upsert-like logic
 
-        // Save Papers
-        // Simple approach: delete existing and insert new list
-        if (editingModule.id) {
-            await supabase.from('papers').delete().eq('module_id', editingModule.id);
-        }
-        if (modulePapers.length > 0) {
-            const papersToSave = modulePapers.map(p => ({
-                module_id: currentModuleId,
-                title: p.title,
-                url: p.url || p.file_url
-            }));
-            await supabase.from('papers').insert(papersToSave);
-        }
+            if (moduleQuiz.id) {
+                const { error } = await supabase.from('quizzes').update(quizData).eq('id', moduleQuiz.id);
+                if (error) throw error;
+            } else {
+                const { error } = await supabase.from('quizzes').insert([quizData]);
+                if (error) throw error;
+            }
 
-        setIsModuleModalOpen(false);
-        fetchCmsContent();
+            // Save Papers
+            if (currentModuleId) {
+                await supabase.from('papers').delete().eq('module_id', currentModuleId);
+                if (modulePapers.length > 0) {
+                    const papersToSave = modulePapers.map(p => ({
+                        module_id: currentModuleId,
+                        title: p.title,
+                        url: p.url || p.file_url
+                    }));
+                    const { error } = await supabase.from('papers').insert(papersToSave);
+                    if (error) throw error;
+                }
+            }
+
+            setIsModuleModalOpen(false);
+            fetchCmsContent();
+            alert('Content saved successfully!');
+        } catch (err) {
+            console.error('Save error:', err);
+            alert('Failed to save content: ' + (err.message || 'Unknown error'));
+        }
         setLoading(false);
     };
 
