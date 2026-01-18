@@ -30,6 +30,7 @@ function App() {
     const [answers, setAnswers] = useState({});
     const [score, setScore] = useState(0);
     const [attempts, setAttempts] = useState({});
+    const [modules, setModules] = useState([]);
 
     useEffect(() => {
         let timer;
@@ -42,6 +43,20 @@ function App() {
         }
         return () => clearInterval(timer);
     }, [quizActive, timeLeft]);
+
+    // Fetch Modules from Supabase
+    useEffect(() => {
+        const fetchModules = async () => {
+            if (user && isSupabaseConfigured) {
+                const { data, error } = await supabase
+                    .from('modules')
+                    .select('*')
+                    .eq('grade', user.grade);
+                if (data) setModules(data);
+            }
+        };
+        fetchModules();
+    }, [user]);
 
     // Dynamic Login Lookup
     useEffect(() => {
@@ -84,17 +99,28 @@ function App() {
                 .maybeSingle();
 
             if (data) {
-                setUser(data);
-                setView('dashboard');
-                // Fetch attempts for this student
-                const { data: attemptsData } = await supabase
-                    .from('quiz_attempts')
-                    .select('module_id, count')
-                    .eq('student_id', data.id);
+                if (data.status === 'disabled') {
+                    alert('Your account has been disabled by the admin.');
+                } else if (data.status === 'pending') {
+                    alert('Your registration is pending approval. Please contact the administrator.');
+                } else {
+                    setUser(data);
+                    if (data.role === 'admin') {
+                        setView('admin-dashboard');
+                    } else {
+                        setView('dashboard');
+                    }
 
-                const attemptMap = {};
-                attemptsData?.forEach(a => attemptMap[a.module_id] = a.count);
-                setAttempts(attemptMap);
+                    // Fetch attempts
+                    const { data: attemptsData } = await supabase
+                        .from('quiz_attempts')
+                        .select('module_id, count')
+                        .eq('student_id', data.id);
+
+                    const attemptMap = {};
+                    attemptsData?.forEach(a => attemptMap[a.module_id] = a.count);
+                    setAttempts(attemptMap);
+                }
             } else {
                 alert('Invalid student code or password!');
             }
@@ -117,7 +143,9 @@ function App() {
                         school: regSchool,
                         student_code: regCode.trim(),
                         grade: parseInt(regGrade),
-                        password: regPassword
+                        password: regPassword,
+                        status: 'pending',
+                        role: 'student'
                     }
                 ])
                 .select();
@@ -143,6 +171,27 @@ function App() {
         setFoundStudent(null);
         setCurrentModule(null);
     };
+
+    // Admin Functions
+    const [allStudents, setAllStudents] = useState([]);
+    const [adminView, setAdminTab] = useState('users'); // 'users', 'content'
+
+    const fetchAllStudents = async () => {
+        const { data } = await supabase.from('students').select('*').order('created_at', { ascending: false });
+        if (data) setAllStudents(data);
+    };
+
+    const updateStudentStatus = async (id, newStatus) => {
+        const { error } = await supabase.from('students').update({ status: newStatus }).eq('id', id);
+        if (!error) fetchAllStudents();
+        else alert('Update failed');
+    };
+
+    useEffect(() => {
+        if (view === 'admin-dashboard') {
+            fetchAllStudents();
+        }
+    }, [view]);
 
     const openModule = (module) => {
         setCurrentModule(module);
@@ -525,7 +574,94 @@ function App() {
         );
     }
 
-    const filteredModules = modulesData.filter(m => m.grade === user?.grade);
+    if (view === 'admin-dashboard') {
+        return (
+            <div className="dashboard admin-portal">
+                <style>{`
+                    .admin-portal { padding: 40px 5%; }
+                    .admin-nav { display: flex; gap: 20px; margin-bottom: 40px; }
+                    .tab-btn { padding: 10px 24px; border-radius: 8px; border: 1px solid var(--glass-border); background: var(--glass-bg); color: #fff; cursor: pointer; }
+                    .tab-btn.active { background: var(--accent-color); border-color: var(--accent-color); }
+                    
+                    .admin-table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+                    .admin-table th, .admin-table td { padding: 16px; text-align: left; border-bottom: 1px solid var(--glass-border); }
+                    .status-badge { padding: 4px 10px; border-radius: 20px; font-size: 0.8rem; font-weight: 600; }
+                    .status-pending { background: rgba(245, 158, 11, 0.1); color: #f59e0b; }
+                    .status-approved { background: rgba(34, 197, 94, 0.1); color: #22c55e; }
+                    .status-disabled { background: rgba(239, 68, 68, 0.1); color: #ef4444; }
+                    
+                    .admin-actions { display: flex; gap: 8px; }
+                    .action-icon-btn { padding: 6px 12px; border-radius: 4px; border: 1px solid var(--glass-border); background: rgba(255,255,255,0.05); color: #fff; cursor: pointer; font-size: 0.8rem; }
+                    .action-approve { border-color: #22c55e; color: #22c55e; }
+                    .action-disable { border-color: #ef4444; color: #ef4444; }
+                `}</style>
+
+                <header>
+                    <div className="user-info">
+                        <h2>Admin <span>Portal</span></h2>
+                        <p style={{ color: 'var(--text-muted)' }}>Manage Users & Content</p>
+                    </div>
+                    <div>
+                        <button className="tab-btn" onClick={() => setView('dashboard')} style={{ marginRight: '10px' }}>Student View</button>
+                        <a className="logout-link" onClick={logout}>Sign Out</a>
+                    </div>
+                </header>
+
+                <div className="admin-nav">
+                    <button className={`tab-btn ${adminView === 'users' ? 'active' : ''}`} onClick={() => setAdminTab('users')}>Users</button>
+                    <button className={`tab-btn ${adminView === 'content' ? 'active' : ''}`} onClick={() => setAdminTab('content')}>Content (Coming Soon)</button>
+                </div>
+
+                {adminView === 'users' && (
+                    <div className="glass-card" style={{ padding: '24px' }}>
+                        <h3>User Management</h3>
+                        <table className="admin-table">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Grade</th>
+                                    <th>School</th>
+                                    <th>Code</th>
+                                    <th>Status</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {allStudents.filter(s => s.role !== 'admin').map(s => (
+                                    <tr key={s.id}>
+                                        <td>{s.fullname}</td>
+                                        <td>Grade {s.grade}</td>
+                                        <td>{s.school}</td>
+                                        <td><code>{s.student_code}</code></td>
+                                        <td>
+                                            <span className={`status-badge status-${s.status}`}>
+                                                {s.status?.toUpperCase()}
+                                            </span>
+                                        </td>
+                                        <td className="admin-actions">
+                                            {s.status === 'pending' && (
+                                                <button className="action-icon-btn action-approve" onClick={() => updateStudentStatus(s.id, 'approved')}>Approve</button>
+                                            )}
+                                            {s.status === 'approved' && (
+                                                <button className="action-icon-btn action-disable" onClick={() => updateStudentStatus(s.id, 'disabled')}>Disable</button>
+                                            )}
+                                            {s.status === 'disabled' && (
+                                                <button className="action-icon-btn action-approve" onClick={() => updateStudentStatus(s.id, 'approved')}>Enable</button>
+                                            )}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                        {allStudents.filter(s => s.role !== 'admin').length === 0 && <p style={{ textAlign: 'center', marginTop: '20px' }}>No students registered yet.</p>}
+                    </div>
+                )}
+            </div>
+        );
+    }
+
+    // Dashboard Filtering
+    const studentModules = modules;
 
     return (
         <div className="dashboard">
@@ -569,15 +705,20 @@ function App() {
             <header>
                 <div className="user-info">
                     <h2>Hi, <span>{user?.fullname}</span></h2>
-                    <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>{user?.school} | Grade {user?.grade}</p>
+                    <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>{user?.school} | Grade {user?.grade} {user?.role === 'admin' && <b style={{ color: 'var(--accent-color)' }}>(ADMIN)</b>}</p>
                 </div>
-                <a className="logout-link" onClick={logout}>Sign Out</a>
+                <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
+                    {user?.role === 'admin' && (
+                        <button className="tab-btn" onClick={() => setView('admin-dashboard')} style={{ fontSize: '0.8rem' }}>Admin Portal</button>
+                    )}
+                    <a className="logout-link" onClick={logout}>Sign Out</a>
+                </div>
             </header>
 
             <section>
                 <h3 className="section-title">Your Modules</h3>
                 <div className="module-grid">
-                    {filteredModules.map(module => (
+                    {studentModules.map(module => (
                         <div key={module.id} className="module-card glass-card" onClick={() => openModule(module)}>
                             <span className="category-tag">{module.category}</span>
                             <h3>{module.title}</h3>
@@ -585,6 +726,7 @@ function App() {
                             <button className="action-btn">Open Module</button>
                         </div>
                     ))}
+                    {studentModules.length === 0 && <p>No modules available for your grade yet.</p>}
                 </div>
             </section>
 
